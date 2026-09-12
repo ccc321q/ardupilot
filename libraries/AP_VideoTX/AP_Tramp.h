@@ -35,6 +35,13 @@
 // Some VTX fail to respond to every request (like Matek FCHUB-VTX) so
 // we sometimes need multiple retries to get the VTX to respond.
 #define VTX_TRAMP_MAX_RETRIES (20)
+// Retry period for a pit mode change the VTX is not accepting. Giving up
+// strands the VTX in pit mode with no way back, so keep asking indefinitely.
+// Also bounds how long video can stay dark once the VTX is ready again.
+#define VTX_TRAMP_PITMODE_RETRY_MS (1000)
+// only complain once the VTX has been refusing for this long: one that is
+// merely still starting up recovers well inside it and should stay silent
+#define VTX_TRAMP_OPTIONS_WARN_MS (30000)
 // Race lock - settings can't be changed
 #define TRAMP_CONTROL_RACE_LOCK (0x01)
 
@@ -76,6 +83,11 @@ private:
     void send_query(uint8_t cmd);
     void process_requests();
     bool is_device_ready();
+    // the reported and configured pit modes disagree. A change to pit mode is
+    // prioritised over every other pending change: update_power() refuses to
+    // send power while in pit mode, and a frequency change cannot be seen on
+    // a dark video feed.
+    bool is_pitmode_disagreed() const;
     void set_frequency(uint16_t freq);
     void set_power(uint16_t power);
     void set_pit_mode(uint8_t onoff);
@@ -143,6 +155,12 @@ private:
     uint16_t _last_conf_power;
     uint16_t _last_conf_options;
     bool _power_warn_pending;
+    // pit mode changes are retried periodically while the VTX disagrees, so
+    // that a refused or missed request cannot strand the VTX with no way back
+    uint32_t _last_pitmode_send_ms {0};
+    // when the current pit mode disagreement began, 0 while pit modes agree
+    uint32_t _pitmode_disagree_ms {0};
+    bool _pitmode_warned {false};
 
     // Receive state machine
     enum class ReceiveState {
